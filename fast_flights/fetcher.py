@@ -1,12 +1,15 @@
 from typing import TypeVar, overload
 
 from primp import Client
+from selectolax.lexbor import LexborHTMLParser
 
+from .exceptions import ResultsNotParseable
 from .integrations.base import DataSourceIntegration, FetchIntegration
 from .parser import ResultList, parse
 from .querying import Query
 
 URL = "https://www.google.com/travel/flights"
+CONSENT_HOST = "consent.google.com"
 
 
 T = TypeVar("T")
@@ -84,7 +87,43 @@ def fetch_flights_html(
             params = {"q": q}
 
         res = client.get(URL, params=params)
+
+        if CONSENT_HOST in res.url:
+            res = _dismiss_consent(client, res.text)
+
         return res.text
 
     else:
         return fetch_integration.fetch_html(q)
+
+
+def _dismiss_consent(client: Client, html: str):
+    """Answer Google's cookie consent interstitial and follow it through.
+
+    Served in regions where consent is mandatory (the EEA and the UK). The page
+    offers a "reject all" and an "accept all" form; we submit the former, which
+    keeps only the strictly necessary cookies and still lets the request
+    continue to the results page.
+    """
+    parser = LexborHTMLParser(html)
+
+    for form in parser.css("form"):
+        fields = {
+            name: node.attributes.get("value") or ""
+            for node in form.css("input[name]")
+            if (name := node.attributes.get("name"))
+        }
+
+        # The reject-all form is the one opting out of the extra consent
+        # modes; the accept-all variant sets them to true instead.
+        if fields.get("set_eom") != "true":
+            continue
+
+        action = form.attributes.get("action")
+        if action:
+            return client.post(action, data=fields)
+
+    raise ResultsNotParseable(
+        "received a consent page but could not find the consent form; "
+        "pass a proxy outside the EEA/UK to bypass it"
+    )

@@ -4,7 +4,7 @@ import json
 
 from selectolax.lexbor import LexborHTMLParser
 
-from .exceptions import FlightsNotFound
+from .exceptions import FlightsNotFound, ResultsNotParseable
 from .model import (
     Airline,
     Airport,
@@ -28,6 +28,12 @@ def parse(html: str) -> ResultList:
 
     # find js
     script = parser.css_first(r"script.ds\:1")
+    if script is None:
+        raise ResultsNotParseable(
+            "no flight data found in the response; Google likely served a "
+            "consent, captcha or rate limit page instead of the results page"
+        )
+
     return parse_js(script.text())
 
 
