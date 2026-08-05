@@ -63,7 +63,11 @@ def parse_js(js: str):
     meta = JsMetadata(alliances=alliances, airlines=airlines)
 
     flights = ResultList()
-    if payload[3][0] is None:
+
+    # A query that matches nothing (a tight max_stops or max_duration, say)
+    # comes back with no itinerary section at all, not an empty one.
+    if payload[3] is None or payload[3][0] is None:
+        flights.metadata = meta
         return flights
 
     for k in payload[3][0]:
